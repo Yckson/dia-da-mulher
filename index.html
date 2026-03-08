@@ -1,0 +1,430 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>Feliz Dia das Mulheres</title>
+    <style>
+        @import url('https://fonts.googleapis.com/css2?family=Press+Start+2P&display=swap');
+
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body, html {
+            width: 100%;
+            height: 100%;
+            background-color: #000;
+            overflow: hidden;
+            font-family: 'Press Start 2P', monospace;
+            /* Previne comportamentos de scroll/zoom no mobile */
+            touch-action: none; 
+            -webkit-user-select: none;
+            user-select: none;
+        }
+
+        canvas {
+            display: block;
+            width: 100%;
+            height: 100%;
+        }
+
+        /* Estilo base para os botões pixel art */
+        .pixel-btn {
+            position: absolute;
+            background-color: #FF1493;
+            color: white;
+            font-family: 'Press Start 2P', monospace;
+            cursor: pointer;
+            z-index: 20;
+            border-radius: 8px;
+            box-shadow: 0 6px 0 #8B008B;
+            border: 4px solid #FFF;
+            text-align: center;
+        }
+
+        .pixel-btn:active {
+            box-shadow: 0 0 0 #8B008B;
+            transform: translate(-50%, calc(-50% + 6px));
+        }
+
+        #startBtn {
+            top: 50%;
+            left: 50%;
+            transform: translate(-50%, -50%);
+            padding: 20px 30px;
+            font-size: 16px;
+            display: none; /* Só mostra após carregar */
+            width: 80%;
+            max-width: 300px;
+        }
+
+        #reloadBtn {
+            bottom: 10%;
+            left: 50%;
+            transform: translate(-50%, 0);
+            padding: 15px 20px;
+            font-size: 12px;
+            display: none;
+            opacity: 0;
+            transition: opacity 1s ease-in-out;
+            width: auto;
+        }
+
+        #reloadBtn:active {
+            transform: translate(-50%, 6px);
+        }
+
+        #loading {
+            position: absolute;
+            top: 50%;
+            left: 50%;
+            transform: translate(-50%, -50%);
+            color: #FFF;
+            font-size: 10px;
+            text-align: center;
+        }
+    </style>
+</head>
+<body>
+
+    <div id="loading">Carregando...</div>
+    <button id="startBtn" class="pixel-btn">Está pronta?</button>
+    <canvas id="gameCanvas"></canvas>
+    <button id="reloadBtn" class="pixel-btn">Recarregar</button>
+
+    <script>
+        const canvas = document.getElementById('gameCanvas');
+        const ctx = canvas.getContext('2d');
+        const startBtn = document.getElementById('startBtn');
+        const reloadBtn = document.getElementById('reloadBtn');
+        const loading = document.getElementById('loading');
+
+        let width, height;
+        
+        // Sequência de mensagens
+        const messages = [
+            { text: "Neste dia, celebramos a sua força e graciosidade.", duration: 5000 },
+            { text: "Você ilumina o mundo com a sua coragem e sabedoria.", duration: 5000 },
+            { text: "Que a sua jornada seja sempre repleta de conquistas.", duration: 5000 },
+            { text: "fiz isso pra você porque é especial pra mim", duration: 5000 },
+            { text: "feliz dia das mulheres", duration: 2000 }
+        ];
+
+        // Máquina de estados
+        let state = 'WAITING_START'; // WAITING_START, TEXT, BOUQUET, EXPLOSION, FINAL
+        let currentMsgIndex = 0;
+        let stateStartTime = 0;
+        
+        // Variáveis de interação
+        let isHolding = false;
+        let holdStartTime = 0;
+        const requiredHoldTime = 3000;
+        
+        // Partículas
+        let particles = [];
+
+        function resize() {
+            width = window.innerWidth;
+            height = window.innerHeight;
+            canvas.width = width;
+            canvas.height = height;
+        }
+        window.addEventListener('resize', resize);
+        resize();
+
+        // Quebra de linha para textos longos no canvas
+        function wrapText(context, text, x, y, maxWidth, lineHeight) {
+            const words = text.split(' ');
+            let line = '';
+            const lines = [];
+
+            for(let n = 0; n < words.length; n++) {
+                const testLine = line + words[n] + ' ';
+                const metrics = context.measureText(testLine);
+                const testWidth = metrics.width;
+                if (testWidth > maxWidth && n > 0) {
+                    lines.push(line);
+                    line = words[n] + ' ';
+                }
+                else {
+                    line = testLine;
+                }
+            }
+            lines.push(line);
+
+            // Desenhar centralizado verticalmente
+            let startY = y - ((lines.length - 1) * lineHeight) / 2;
+            for(let i = 0; i < lines.length; i++) {
+                context.fillText(lines[i], x, startY + (i * lineHeight));
+            }
+        }
+
+        // --- Desenho Estilo Pixel Art ---
+        function drawPixelFlower(cx, cy, color, scale = 1) {
+            // Aumentamos o tamanho base da flor
+            const baseSize = Math.min(width, height) * 0.025; 
+            const size = baseSize * scale;
+            
+            ctx.fillStyle = color;
+            // Cruz principal (pétalas)
+            ctx.fillRect(cx - size, cy - size*2, size*2, size*2); // cima
+            ctx.fillRect(cx - size*2, cy - size, size*2, size*2); // esq
+            ctx.fillRect(cx, cy - size, size*2, size*2); // dir
+            ctx.fillRect(cx - size, cy, size*2, size*2); // baixo
+            
+            // Centro amarelo
+            ctx.fillStyle = '#FFD700'; 
+            ctx.fillRect(cx - size/2, cy - size/2, size, size);
+        }
+
+        function drawBouquet(shakeAmount) {
+            const bx = width / 2 + (Math.random() - 0.5) * shakeAmount;
+            const by = height / 2 - height * 0.05 + (Math.random() - 0.5) * shakeAmount;
+            
+            // Tamanho base para proporções do buquê
+            const size = Math.min(width, height) * 0.025;
+
+            // --- Caules verdes (Mais grossos e numerosos) ---
+            ctx.fillStyle = '#228B22';
+            ctx.fillRect(bx - size*1.5, by, size*1.2, size*10); // Centro-esq
+            ctx.fillRect(bx + size*0.5, by, size*1.2, size*10); // Centro-dir
+            ctx.fillRect(bx - size*3, by + size*2, size*1.2, size*8); // Esq
+            ctx.fillRect(bx + size*2, by + size*1.5, size*1.2, size*8); // Dir
+            ctx.fillRect(bx - size*4.5, by + size*3, size, size*6); // Extrema esq
+            ctx.fillRect(bx + size*3.5, by + size*3, size, size*6); // Extrema dir
+
+            // --- Folhas ---
+            ctx.fillRect(bx - size*5, by + size*5, size*2.5, size*1.5);
+            ctx.fillRect(bx + size*3, by + size*6, size*2.5, size*1.5);
+            ctx.fillRect(bx - size*6, by + size*3, size*2, size);
+            ctx.fillRect(bx + size*4, by + size*4, size*2, size);
+            ctx.fillRect(bx - size*2, by + size*7, size*2, size*1.5);
+
+            // --- Flores (Camada de trás) ---
+            drawPixelFlower(bx - size*4.5, by - size*3.5, '#FF1493', 0.8);
+            drawPixelFlower(bx + size*4.5, by - size*2.5, '#FF69B4', 0.8);
+            drawPixelFlower(bx - size*2.5, by - size*6.5, '#DC143C', 0.9);
+            drawPixelFlower(bx + size*2.5, by - size*6.0, '#FF0000', 0.9);
+            drawPixelFlower(bx, by - size*7.5, '#FF1493', 1.0); // Topo alto
+            
+            // --- Flores (Camada do meio) ---
+            drawPixelFlower(bx - size*4.0, by - size*0.5, '#FF0000', 1.1);
+            drawPixelFlower(bx + size*4.0, by - size*0.0, '#DC143C', 1.1);
+            drawPixelFlower(bx - size*5.5, by + size*2.0, '#FF69B4', 0.7);
+            drawPixelFlower(bx + size*5.0, by + size*1.5, '#FF1493', 0.8);
+            drawPixelFlower(bx, by - size*4.5, '#FF69B4', 1.2); // Centro cima
+
+            // --- Flores (Camada da frente) ---
+            drawPixelFlower(bx - size*2.0, by - size*2.5, '#FF1493', 1.3); 
+            drawPixelFlower(bx + size*2.0, by - size*2.5, '#FF0000', 1.3);
+            drawPixelFlower(bx - size*2.5, by + size*1.5, '#DC143C', 1.2); 
+            drawPixelFlower(bx + size*2.5, by + size*2.0, '#FF69B4', 1.2); 
+            
+            // --- Flor central (A maior e principal) ---
+            drawPixelFlower(bx, by - size*0.5, '#FF1493', 1.6); 
+        }
+
+        // --- Sistema de Partículas ---
+        class Particle {
+            constructor(x, y) {
+                this.x = x;
+                this.y = y;
+                const angle = Math.random() * Math.PI * 2;
+                const speed = Math.random() * 12 + 2; // Velocidade maior para explosão maior
+                this.vx = Math.cos(angle) * speed;
+                this.vy = Math.sin(angle) * speed;
+                const colors = ['#FF0000', '#FF1493', '#FF69B4', '#DC143C', '#228B22', '#FFD700'];
+                this.color = colors[Math.floor(Math.random() * colors.length)];
+                this.size = Math.random() * 8 + 4; // Partículas um pouco maiores
+                this.life = 1.0;
+                this.decay = Math.random() * 0.015 + 0.005;
+            }
+            update() {
+                this.x += this.vx;
+                this.y += this.vy;
+                this.vy += 0.15; // Gravidade
+                this.life -= this.decay;
+            }
+            draw() {
+                ctx.globalAlpha = Math.max(0, this.life);
+                ctx.fillStyle = this.color;
+                ctx.fillRect(this.x, this.y, this.size, this.size);
+                ctx.globalAlpha = 1.0;
+            }
+        }
+
+        function triggerExplosion() {
+            state = 'EXPLOSION';
+            stateStartTime = performance.now();
+            particles = [];
+            // Mais partículas devido ao buquê maior
+            for(let i = 0; i < 300; i++) {
+                particles.push(new Particle(width/2, height/2 - height*0.05));
+            }
+        }
+
+        // --- Eventos de Interação (Toque / Mouse) ---
+        startBtn.addEventListener('click', () => {
+            startBtn.style.display = 'none';
+            state = 'TEXT';
+            stateStartTime = performance.now();
+        });
+
+        function startHold(e) {
+            if (state !== 'BOUQUET') return;
+            e.preventDefault();
+            isHolding = true;
+            holdStartTime = performance.now();
+        }
+
+        function endHold(e) {
+            if (state !== 'BOUQUET') return;
+            e.preventDefault();
+            isHolding = false;
+        }
+
+        canvas.addEventListener('mousedown', startHold);
+        canvas.addEventListener('touchstart', startHold, {passive: false});
+        
+        window.addEventListener('mouseup', endHold);
+        window.addEventListener('touchend', endHold);
+        window.addEventListener('touchcancel', endHold);
+
+        reloadBtn.addEventListener('click', () => {
+            location.reload();
+        });
+
+        // --- Loop Principal ---
+        function loop(timestamp) {
+            ctx.clearRect(0, 0, width, height);
+            
+            const elapsed = timestamp - stateStartTime;
+
+            // Configuração base de texto
+            ctx.textAlign = 'center';
+            ctx.textBaseline = 'middle';
+            let fontSize = Math.min(width * 0.04, 20);
+            ctx.font = `${fontSize}px 'Press Start 2P', monospace`;
+            const maxWidth = width * 0.85;
+            const lineHeight = fontSize * 1.8;
+
+            if (state === 'WAITING_START') {
+                // Fica apenas aguardando o clique do botão que está no DOM
+            }
+            else if (state === 'TEXT') {
+                const msg = messages[currentMsgIndex];
+                const duration = msg.duration;
+                const fadeTime = 800; // Tempo de fade in/out em ms
+
+                let alpha = 1;
+                if (elapsed < fadeTime) {
+                    alpha = elapsed / fadeTime;
+                } else if (elapsed > duration - fadeTime) {
+                    alpha = (duration - elapsed) / fadeTime;
+                }
+
+                ctx.globalAlpha = Math.max(0, Math.min(1, alpha));
+                ctx.fillStyle = '#FFFFFF';
+                
+                wrapText(ctx, msg.text, width/2, height/2, maxWidth, lineHeight);
+                ctx.globalAlpha = 1.0;
+
+                if (elapsed >= duration) {
+                    currentMsgIndex++;
+                    stateStartTime = timestamp;
+                    if (currentMsgIndex >= messages.length) {
+                        state = 'BOUQUET';
+                    }
+                }
+            } 
+            else if (state === 'BOUQUET') {
+                let shakeAmount = 0;
+                
+                if (isHolding) {
+                    const heldTime = timestamp - holdStartTime;
+                    shakeAmount = (heldTime / requiredHoldTime) * 20; // Tremor mais forte
+                    
+                    if (heldTime >= requiredHoldTime) {
+                        isHolding = false;
+                        triggerExplosion();
+                    }
+                }
+
+                // Efeito de fade in no começo do buquê
+                if (elapsed < 1000) ctx.globalAlpha = elapsed / 1000;
+                else ctx.globalAlpha = 1.0;
+
+                drawBouquet(shakeAmount);
+
+                // Texto "aperte e segure" piscando (posicionado mais para baixo devido ao buquê maior)
+                ctx.fillStyle = '#FFFFFF';
+                ctx.font = `${fontSize * 0.8}px 'Press Start 2P', monospace`;
+                if (Math.floor(timestamp / 500) % 2 === 0 || isHolding) {
+                    let textY = height/2 + height*0.25; // Desceu mais
+                    ctx.fillText("aperte e segure", width/2, textY);
+                    
+                    if(isHolding) {
+                        // Barra de progresso rudimentar
+                        const progress = Math.min(1, (timestamp - holdStartTime) / requiredHoldTime);
+                        ctx.fillStyle = '#FF1493';
+                        ctx.fillRect(width/2 - 50, textY + 20, 100 * progress, 5);
+                        ctx.strokeStyle = '#FFF';
+                        ctx.strokeRect(width/2 - 50, textY + 20, 100, 5);
+                    }
+                }
+                ctx.globalAlpha = 1.0;
+            }
+            else if (state === 'EXPLOSION') {
+                let allDead = true;
+                particles.forEach(p => {
+                    p.update();
+                    p.draw();
+                    if (p.life > 0) allDead = false;
+                });
+
+                if (allDead && elapsed > 2000) {
+                    state = 'FINAL';
+                    stateStartTime = timestamp;
+                }
+            }
+            else if (state === 'FINAL') {
+                const fadeTime = 1500;
+                let alpha = Math.min(1, elapsed / fadeTime);
+                
+                ctx.globalAlpha = alpha;
+                ctx.fillStyle = '#FFFFFF';
+                // Fonte ligeiramente maior para o final, com fallback para o Kanji '太'
+                ctx.font = `${fontSize * 1.2}px 'Press Start 2P', sans-serif`;
+                ctx.fillText("seja feliz 太", width/2, height/2);
+                ctx.globalAlpha = 1.0;
+
+                if (elapsed > fadeTime && reloadBtn.style.display !== 'block') {
+                    reloadBtn.style.display = 'block';
+                    // Pequeno delay para acionar a transição de opacidade do CSS
+                    setTimeout(() => {
+                        reloadBtn.style.opacity = '1';
+                    }, 50);
+                }
+            }
+
+            requestAnimationFrame(loop);
+        }
+
+        // Inicia apenas quando a fonte web for carregada
+        document.fonts.ready.then(() => {
+            loading.style.display = 'none';
+            startBtn.style.display = 'block'; // Mostra o botão após carregar
+            requestAnimationFrame(loop);
+        }).catch(() => {
+            // Fallback caso a fonte falhe
+            loading.style.display = 'none';
+            startBtn.style.display = 'block';
+            requestAnimationFrame(loop);
+        });
+
+    </script>
+</body>
+</html>
